@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"  # Adapter le port si nécessaire
+    volumes:
+      - .:/var/www/html  # Monter le code source de Laravel dans le conteneur
+    environment:
+      MAIL_MAILER: smtp
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 465
+      MAIL_USERNAME: relationnellesresources@gmail.com
+      MAIL_PASSWORD: vxcruoyimifyueuc
+      MAIL_ENCRYPTION: tls
+      MAIL_FROM_ADDRESS: relationnellesresources@gmail.com
+      MAIL_FROM_NAME: "(Re)Sources Relationnelles"
+    depends_on:
+      - db  # Dépendance du service DB
+
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_DB: da-filrouge  # Nom de la base de données
+      POSTGRES_USER: postgres  # Utilisateur de la base de données
+      POSTGRES_PASSWORD: root  # Mot de passe de la base de données
+    volumes:
+      - db-data:/var/lib/postgresql/data  # Volume pour les données de la base de données
+    ports:
+      - "5433:5432"
+
+  nginx:
+    image: nginx:1.22-alpine
+    ports:
+      - "8008:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./:/code
+    depends_on:
+      - app
+
+volumes:
+  db-data:

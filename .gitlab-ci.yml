@@ -1,0 +1,96 @@
+stages:
+  - test
+  - build
+  - sonarqube-check
+  - sonarqube-vulnerability-report
+
+variables:
+  DOCKER_IMAGE_NAME: "mon_app_api"  # Nom de l'image Docker pour l'API
+  DOCKER_TAG: "latest"
+  DOCKER_REGISTRY: "registry.gitlab.com/filrouge2/da-event"  # Modifier selon votre registre GitLab
+  DOCKER_USERNAME: "gitlab-ci-token"
+
+# Étape 1 : Tester l'application Laravel
+test_laravel:
+  stage: test
+  image: php:8.3-fpm
+  services:
+    - postgres:13
+  variables:
+    POSTGRES_DB: da-filrouge
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: root
+    DB_HOST: postgres
+    DB_PORT: 5432
+  before_script:
+    - apt-get update && apt-get install -y git unzip libpq-dev
+    - docker-php-ext-install pdo pdo_pgsql pgsql
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - sed -i "s/DB_CONNECTION=.*/DB_CONNECTION=pgsql/" .env  # Assurez-vous que DB_CONNECTION est bien défini pour PostgreSQL
+    - sed -i "s/DB_HOST=.*/DB_HOST=postgres/" .env  # Assurez-vous que DB_HOST correspond au service PostgreSQL
+    - sed -i "s/DB_PORT=.*/DB_PORT=5432/" .env  # Assurez-vous que DB_PORT est correct pour PostgreSQ
+    - sed -i "s/DB_USERNAME=.*/DB_USERNAME=postgres/" .env
+    - sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=root/" .env
+    - composer install
+    - php artisan key:generate
+    - php artisan migrate --seed
+  script:
+    - vendor/bin/phpunit --coverage-text || true
+
+# Étape 2 : Construire l'image Docker pour l'API
+build_laravel:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin "$DOCKER_REGISTRY"
+  script:
+    - docker build -t $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:$DOCKER_TAG .
+    - docker push $DOCKER_REGISTRY/$DOCKER_IMAGE_NAME:$DOCKER_TAG
+
+# Étape 3 : ConnardQube
+image: 
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+
+variables:
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+  GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+
+
+sonarqube-check:
+  stage: sonarqube-check
+  dependencies:
+    - get-binaries
+    - build
+  cache:
+    policy: pull
+    key: "${CI_COMMIT_SHORT_SHA}"
+    paths:
+      - sonar-scanner/
+      
+      
+  script: 
+    - sonar-scanner
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'master'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+
+sonarqube-vulnerability-report:
+  stage: sonarqube-vulnerability-report
+  script:
+    - 'curl -u "${SONAR_TOKEN}:" "${SONAR_HOST_URL}/api/issues/gitlab_sast_export?projectKey=filrouge2_da-event_a2e0354d-84d6-4f73-87b9-10c7111666ef&branch=${CI_COMMIT_BRANCH}&pullRequest=${CI_MERGE_REQUEST_IID}" -o gl-sast-sonar-report.json'
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'master'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+  artifacts:
+    expire_in: 1 day
+    reports:
+      sast: gl-sast-sonar-report.json

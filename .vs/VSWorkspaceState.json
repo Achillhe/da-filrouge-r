@@ -1,0 +1,11 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\app",
+    "\\app\\Http",
+    "\\app\\Http\\Controllers",
+    "\\app\\Http\\Controllers\\User"
+  ],
+  "SelectedNode": "\\app\\Http\\Controllers\\User\\AuthController.php",
+  "PreviewInSolutionExplorer": false
+}
